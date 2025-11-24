@@ -90,20 +90,10 @@ const DocumentEditor: React.FC = () => {
   useEffect(() => {
     if (!socket) return;
 
+    // Save document content only via socket, fetch GET removed to fix incorrect save call
     const interval = setInterval(() => {
       if (permission === 'editor') {
         setIsSaving(true);
-        fetch(`${BACKEND_URL}/documents/${documentId}?shareToken=${shareToken ?? ''}`)
-          .then((res) => {
-            if (!res.ok) throw new Error('Save failed');
-            return res.json();
-          })
-          .then(() => {
-            setIsSaving(false);
-          })
-          .catch(() => {
-            setIsSaving(false);
-          });
         socket.emit('save-document', { documentId, content });
       }
     }, SAVE_INTERVAL_MS);
