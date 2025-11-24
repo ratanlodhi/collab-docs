@@ -22,24 +22,8 @@ const io = socketio(server, {
   },
 });
 
-// CORS middleware with dynamic origin
 app.use(cors({
-  origin: function(origin, callback){
-    // allow requests with no origin (like mobile apps, curl requests)
-    if(!origin) return callback(null, true);
-    if (Array.isArray(FRONTEND_ORIGIN)) {
-      if(FRONTEND_ORIGIN.indexOf(origin) === -1){
-        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-        return callback(new Error(msg), false);
-      }
-    } else {
-      if(origin !== FRONTEND_ORIGIN){
-        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-        return callback(new Error(msg), false);
-      }
-    }
-    return callback(null, true);
-  }
+  origin: '*', // temporarily allow all origins for debugging
 }));
 app.use(express.json());
 
