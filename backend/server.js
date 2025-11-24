@@ -8,7 +8,12 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const server = http.createServer(app);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://collab-docs-p1mg.vercel.app',
+];
+
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || allowedOrigins;
 
 const io = socketio(server, {
   cors: {
@@ -17,8 +22,24 @@ const io = socketio(server, {
   },
 });
 
+// CORS middleware with dynamic origin
 app.use(cors({
-  origin: FRONTEND_ORIGIN,
+  origin: function(origin, callback){
+    // allow requests with no origin (like mobile apps, curl requests)
+    if(!origin) return callback(null, true);
+    if (Array.isArray(FRONTEND_ORIGIN)) {
+      if(FRONTEND_ORIGIN.indexOf(origin) === -1){
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+    } else {
+      if(origin !== FRONTEND_ORIGIN){
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+    }
+    return callback(null, true);
+  }
 }));
 app.use(express.json());
 
