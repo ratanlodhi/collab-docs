@@ -1,9 +1,10 @@
 
+
 const express = require('express');
 const http = require('http');
 const socketio = require('socket.io');
-const mongoose = require('mongoose');
 const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,61 +22,96 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const Document = require('./models/Document');
+const dotenv = require('dotenv');
+dotenv.config();
 
-// MongoDB connection
-const mongoURI = 'mongodb://localhost:27017/collab-docs';
-mongoose.connect(mongoURI)
-  .then(async () => {
-    console.log('Connected to MongoDB');
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-    // Check if default document exists, create it if not
-    try {
-      let defaultDoc = await Document.findOne({ documentId: 'default' });
-      if (!defaultDoc) {
-        defaultDoc = new Document({
-          documentId: 'default',
-          title: 'Default Document',
-          content: 'This is the default document.',
-        });
-        await defaultDoc.save();
-        console.log('Default document created.');
-      }
-    } catch (err) {
-      console.error('Error checking/creating default document:', err);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+async function getDocumentByDocumentId(documentId) {
+  const { data, error } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('documentId', documentId)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function createDocument(document) {
+  const { data, error } = await supabase
+    .from('documents')
+    .insert([document]);
+  if (error) throw error;
+  return data;
+}
+
+async function updateDocumentContent(documentId, content) {
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ content, lastUpdated: new Date().toISOString() })
+    .eq('documentId', documentId);
+  if (error) throw error;
+  return data;
+}
+
+async function updateDocumentPermissions(documentId, permissions) {
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ permissions })
+    .eq('documentId', documentId);
+  if (error) throw error;
+  return data;
+}
+
+// Check if default document exists, create it if not
+(async function checkDefaultDocument() {
+  try {
+    let defaultDoc = await getDocumentByDocumentId('default');
+    if (!defaultDoc) {
+      const defaultDocument = {
+        documentId: 'default',
+        title: 'Default Document',
+        content: 'This is the default document.',
+        lastUpdated: new Date().toISOString(),
+        permissions: {},
+      };
+      await createDocument(defaultDocument);
+      console.log('Default document created.');
+    } else {
+      console.log('Default document exists.');
     }
-  })
-  .catch((err) => console.error('MongoDB connection error:', err));
+  } catch (err) {
+    console.error('Error checking/creating default document:', err);
+  }
+})();
 
-// Add mongoose connection event listeners for better logging and diagnostics
-mongoose.connection.on('connected', () => {
-  console.log('Mongoose connected to MongoDB');
-});
-mongoose.connection.on('error', (err) => {
-  console.error('Mongoose connection error:', err);
-});
-mongoose.connection.on('disconnected', () => {
-  console.warn('Mongoose disconnected from MongoDB');
-});
-
-// Optional: handle process termination to close mongoose connection gracefully
-process.on('SIGINT', async () => {
-  await mongoose.connection.close();
-  console.log('Mongoose connection closed due to app termination');
-  process.exit(0);
-});
+const BACKEND_HOSTNAME = process.env.BACKEND_HOSTNAME || `localhost:${process.env.PORT || 5000}`;
 
 // REST API endpoint to create a new document
 app.post('/documents', async (req, res) => {
   try {
     const { documentId, title, content } = req.body;
-    let document = await Document.findOne({ documentId });
+    let document = null;
+    try {
+      document = await getDocumentByDocumentId(documentId);
+    } catch (err) {
+      document = null;
+    }
     if (document) {
       return res.status(400).json({ message: 'Document already exists' });
     }
-    document = new Document({ documentId, title, content });
-    await document.save();
-    res.status(201).json(document);
+    const newDocument = {
+      documentId,
+      title,
+      content,
+      lastUpdated: new Date().toISOString(),
+      permissions: {},
+    };
+    await createDocument(newDocument);
+    res.status(201).json(newDocument);
   } catch (error) {
     console.error('Error in POST /documents:', error);
     res.status(500).json({ message: 'Server error', error });
@@ -89,7 +125,7 @@ app.post('/documents/:id/share', async (req, res) => {
     let { permission } = req.body;
     permission = permission === 'viewer' ? 'viewer' : 'editor'; // default to editor if invalid
 
-    const document = await Document.findOne({ documentId });
+    const document = await getDocumentByDocumentId(documentId);
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
@@ -97,9 +133,11 @@ app.post('/documents/:id/share', async (req, res) => {
     // Generate a simple random share token (for demo purposes, can be improved)
     const shareToken = Math.random().toString(36).substr(2, 9);
 
-    // Add token to document permissions map
-    document.permissions.set(shareToken, permission);
-    await document.save();
+    // Update permissions object
+    const permissions = document.permissions || {};
+    permissions[shareToken] = permission;
+
+    await updateDocumentPermissions(documentId, permissions);
 
     // Return shareable link (frontend to use this)
     const shareLink = `${req.protocol}://${BACKEND_HOSTNAME}/documents/${documentId}?shareToken=${shareToken}`;
@@ -116,7 +154,7 @@ app.get('/documents/:id', async (req, res) => {
     const documentId = req.params.id;
     const shareToken = req.query.shareToken;
 
-    const document = await Document.findOne({ documentId });
+    const document = await getDocumentByDocumentId(documentId);
     if (!document) {
       console.warn(`Document with id ${documentId} not found`);
       return res.status(404).json({ message: 'Document not found' });
@@ -125,7 +163,7 @@ app.get('/documents/:id', async (req, res) => {
     // Determine permission mode from shareToken, default to editor if no token or invalid
     let permission = 'editor';
     if (shareToken) {
-      const permFromToken = document.permissions.get(shareToken);
+      const permFromToken = document.permissions ? document.permissions[shareToken] : null;
       if (!permFromToken) {
         // Invalid share token
         return res.status(403).json({ message: 'Invalid share token' });
@@ -146,8 +184,6 @@ app.get('/documents/:id', async (req, res) => {
   }
 });
 
-const BACKEND_HOSTNAME = process.env.BACKEND_HOSTNAME || `localhost:${process.env.PORT || 5000}`;
-
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
@@ -165,30 +201,35 @@ io.on('connection', (socket) => {
   // Socket event handlers
   socket.on('join-document', async ({ documentId, shareToken }) => {
     // Validate the shareToken if provided
-    const document = await Document.findOne({ documentId });
-    if (!document) {
-      socket.emit('error', 'Document not found');
-      return;
-    }
-
-    let permission = 'editor'; // default permission
-    if (shareToken) {
-      const permFromToken = document.permissions.get(shareToken);
-      if (!permFromToken) {
-        socket.emit('error', 'Invalid share token');
+    try {
+      const document = await getDocumentByDocumentId(documentId);
+      if (!document) {
+        socket.emit('error', 'Document not found');
         return;
       }
-      permission = permFromToken;
+
+      let permission = 'editor'; // default permission
+      if (shareToken) {
+        const permFromToken = document.permissions ? document.permissions[shareToken] : null;
+        if (!permFromToken) {
+          socket.emit('error', 'Invalid share token');
+          return;
+        }
+        permission = permFromToken;
+      }
+
+      socket.data.permission = permission;
+      socket.data.documentId = documentId;
+      socket.data.shareToken = shareToken;
+
+      socket.join(documentId);
+      console.log(`Socket ${socket.id} joined document ${documentId} with permission ${permission}`);
+
+      socket.emit('load-document', { content: document.content, permission });
+    } catch (error) {
+      console.error('Error in join-document socket event:', error);
+      socket.emit('error', 'Server error');
     }
-
-    socket.data.permission = permission;
-    socket.data.documentId = documentId;
-    socket.data.shareToken = shareToken;
-
-    socket.join(documentId);
-    console.log(`Socket ${socket.id} joined document ${documentId} with permission ${permission}`);
-
-    socket.emit('load-document', { content: document.content, permission });
   });
 
   socket.on('send-changes', (delta) => {
@@ -213,11 +254,7 @@ io.on('connection', (socket) => {
         return;
       }
 
-      await Document.findOneAndUpdate(
-        { documentId },
-        { content, lastUpdated: Date.now() },
-        { upsert: true }
-      );
+      await updateDocumentContent(documentId, content);
       console.log(`Document ${documentId} saved.`);
     } catch (error) {
       console.error('Error saving document:', error);
