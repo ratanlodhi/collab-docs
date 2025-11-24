@@ -8,6 +8,8 @@ import type { DeltaStatic, Sources } from 'quill';
 
 const SAVE_INTERVAL_MS = 2000;
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
 interface DocumentData {
   documentId: string;
   title: string;
@@ -30,7 +32,7 @@ const DocumentEditor: React.FC = () => {
   const quillRef = useRef<ReactQuill>(null);
 
   useEffect(() => {
-    const s = io('http://localhost:5000');
+    const s = io(BACKEND_URL);
     setSocket(s);
 
     return () => {
@@ -91,7 +93,7 @@ const DocumentEditor: React.FC = () => {
     const interval = setInterval(() => {
       if (permission === 'editor') {
         setIsSaving(true);
-        fetch(`http://localhost:5000/documents/${documentId}?shareToken=${shareToken ?? ''}`)
+        fetch(`${BACKEND_URL}/documents/${documentId}?shareToken=${shareToken ?? ''}`)
           .then((res) => {
             if (!res.ok) throw new Error('Save failed');
             return res.json();
@@ -110,7 +112,7 @@ const DocumentEditor: React.FC = () => {
   }, [socket, documentId, content, permission, shareToken, title]);
 
   useEffect(() => {
-    fetch(`http://localhost:5000/documents/${documentId}?shareToken=${shareToken ?? ''}`)
+    fetch(`${BACKEND_URL}/documents/${documentId}?shareToken=${shareToken ?? ''}`)
       .then((res) => {
         if (!res.ok) throw new Error('Document not found');
         return res.json();
