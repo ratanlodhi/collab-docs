@@ -4,6 +4,7 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { io, Socket } from 'socket.io-client';
 import Sharing from './Sharing';
+import type { DeltaStatic, Sources } from 'quill';
 
 const SAVE_INTERVAL_MS = 2000;
 
@@ -70,7 +71,7 @@ const DocumentEditor: React.FC = () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) return;
 
-    const handler = (delta: any, oldDelta: any, source: 'user' | 'api' | 'silent') => {
+    const handler = (delta: DeltaStatic, _oldDelta: DeltaStatic, source: Sources) => {
       if (source !== 'user') return;
       if (permission === 'editor') {
         socket.emit('send-changes', delta);
