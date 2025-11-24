@@ -99,7 +99,9 @@ async function updateDocumentPermissions(documentId, permissions) {
   }
 })();
 
+
 const BACKEND_HOSTNAME = process.env.BACKEND_HOSTNAME || `localhost:${process.env.PORT || 5000}`;
+const FRONTEND_HOSTNAME = process.env.FRONTEND_HOSTNAME || 'localhost:3000';
 
 // REST API endpoint to create a new document
 app.post('/documents', async (req, res) => {
@@ -151,7 +153,7 @@ app.post('/documents/:id/share', async (req, res) => {
     await updateDocumentPermissions(documentId, permissions);
 
     // Return shareable link (frontend to use this)
-    const shareLink = `${req.protocol}://${BACKEND_HOSTNAME}/documents/${documentId}?shareToken=${shareToken}`;
+    const shareLink = `${req.protocol}://${FRONTEND_HOSTNAME}/documents/${documentId}?shareToken=${shareToken}`;
     res.json({ shareLink, permission });
   } catch (error) {
     console.error('Error creating sharing link:', error);
