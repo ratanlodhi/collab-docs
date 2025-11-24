@@ -69,8 +69,19 @@ async function updateDocumentPermissions(documentId, permissions) {
 // Check if default document exists, create it if not
 (async function checkDefaultDocument() {
   try {
-    let defaultDoc = await getDocumentByDocumentId('default');
-    if (!defaultDoc) {
+    let defaultDoc = null;
+    try {
+      defaultDoc = await supabase
+        .from('documents')
+        .select('*')
+        .eq('documentId', 'default')
+        .maybeSingle();
+    } catch (error) {
+      // may still throw error, fallback to null
+      defaultDoc = null;
+    }
+
+    if (!defaultDoc || defaultDoc.data === null) {
       const defaultDocument = {
         documentId: 'default',
         title: 'Default Document',
